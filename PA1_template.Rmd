@@ -1,0 +1,164 @@
+---
+title: "PA1_template.Rmd"
+author: "Scott Jacobs"
+date: "January 7, 2016"
+output: html_document
+---
+
+###Assignment
+This assignment will be described in multiple parts. You will need to write a report that answers the questions detailed below. Ultimately, you will need to complete the entire assignment in a single R markdown document that can be processed by knitr and be transformed into an HTML file.
+
+Throughout your report make sure you always include the code that you used to generate the output you present. When writing code chunks in the R markdown document, always use \color{red}{\verb|echo = TRUE|} so that someone else will be able to read the code. This assignment will be evaluated via peer assessment so it is essential that your peer evaluators be able to review the code for your analysis.
+
+For the plotting aspects of this assignment, feel free to use any plotting system in R (i.e., base, lattice, ggplot2)
+
+Fork/clone the GitHub repository created for this assignment. You will submit this assignment by pushing your completed files into your forked repository on GitHub. The assignment submission will consist of the URL to your GitHub repository and the SHA-1 commit ID for your repository state.
+
+NOTE: The GitHub repository also contains the dataset for the assignment so you do not have to download the data separately.
+
+```{r LibraryPacks, message=FALSE, warning=FALSE}
+library(Hmisc)
+library(ggplot2)
+library(tidyr)
+library(VIM)
+library(mice)
+library(dplyr)
+library(chron)
+library(knitr)
+```
+
+##Loading and preprocessing the data
+
+1. Load the data 
+2. Process/transform the data (if necessary) into a format suitable for your analysis
+```{r Loading_PreProcessing}
+activity <- read.csv("~/Data_Science/ReproResearch/activity.csv", stringsAsFactors=FALSE)
+
+str(activity)
+
+activity$date <- as.Date(activity$date)
+```
+
+##What is mean total number of steps taken per day?
+
+For this part of the assignment, you can ignore the missing values in the dataset.
+
+Calculate the total number of steps taken per day
+If you do not understand the difference between a histogram and a barplot, research the difference between them. 
+
+1. Make a histogram of the total number of steps taken each day
+2. Calculate and report the mean and median of the total number of steps taken per day
+
+
+```{r, MeanData}
+dailySteps <- aggregate(steps~cut(date, "day"), data=activity, FUN=sum)
+hist(dailySteps$steps)
+mean1 <- mean(dailySteps$steps)
+median1 <- median(dailySteps$steps)
+table1 <- cbind(Mean=mean1, Median=median1)
+table1
+```
+
+##What is the average daily activity pattern?
+
+1. Make a time series plot  of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all days (y-axis)
+
+```{r ActivityPlot}
+intervals.df <- spread(activity, interval, steps)
+intervals.df <- intervals.df[-1]
+means.df <- colMeans(intervals.df, na.rm = TRUE)
+plot(means.df, type="l", xlab="Interval", ylab="Mean Steps", main="Activity Plot")
+```
+
+2. Which 5-minute interval, on average across all the days in the dataset, contains the maximum number of steps?
+
+```{r ActivityAnswer}
+which.max(means.df)
+```
+
+##Imputing missing values
+
+*Note that there are a number of days/intervals where there are missing values . The presence of missing days may introduce bias into some calculations or summaries of the data.*
+
+1. Calculate and report the total number of missing values in the dataset (i.e. the total number of rows with NAs)
+
+**There are 2304 NAs in 'steps' column, which is about 13% of the data.**
+
+```{r ImputationCalculation}
+describe(activity)
+NAsPlot <- aggr(activity, col=c('navyblue','red'), numbers=TRUE, sortVars=TRUE, 
+                labels=names(activity), cex.axis=.7,gap=3,
+                ylab=c("Histogram of missing data", "Pattern"))
+```
+
+2. Devise a strategy for filling in all of the missing values in the dataset. The strategy does not need to be sophisticated. For example, you could use the mean/median for that day, or the mean for that 5-minute interval, etc.
+
+**I used predicitive mean matching from the 'mice' package.**
+```{r Imputation, cache=TRUE, messages=FALSE}
+tempData <- mice(activity[-2], m=5,method="pmm", maxit=50, seed=200, print=FALSE) #selected predictive mean matching for imputation calc
+summary(tempData)
+imputedSteps <- complete(tempData,1) #select first imputed data set
+summary(imputedSteps)
+```
+
+3. Create a new dataset that is equal to the original dataset but with the missing data filled in.
+
+```{r ImputationDataSet}
+imputedActivity <- cbind(imputedSteps,date=activity$date)
+summary(imputedActivity)
+```
+
+4. Make a histogram of the total number of steps taken each day and Calculate and report the mean and median total number of steps taken per day. Do these values differ from the estimates from the first part of the assignment? What is the impact of imputing missing data on the estimates of the total daily number of steps?
+
+```{r ImputationHistogram}
+dailySteps2 <- aggregate(steps~cut(date, "day"), data=imputedActivity, FUN=sum)
+hist(dailySteps2$steps)
+```
+
+```{r ImputationStats}
+mean2 <- mean(dailySteps2$steps)
+median2 <- median(dailySteps2$steps)
+table2 <- cbind(Mean=mean2, Median=median2)
+statsDF <- rbind(table1, table2)
+rownames(statsDF) <- c("Non-Imputed", "Imputed")
+#knitr
+kable(statsDF)
+```
+
+
+**The mean and median for the imputed data are higher, thus imputing increased the number of daily steps.**
+
+##Are there differences in activity patterns between weekdays and weekends?
+
+For this part the weekdays function may be of some help here. Use the dataset with the filled-in missing values for this part.
+
+1. Create a new factor variable in the dataset with two levels – “weekday” and “weekend” indicating whether a given date is a weekday or weekend day.
+
+```{r ActivityPatterns}
+
+imputedActivity$weekend <- chron::is.weekend(imputedActivity$date)
+imputedActivity$factor <- as.factor(imputedActivity$weekend)
+levels(imputedActivity$factor)=c("weekday","weekend")
+```
+
+
+2. Make a panel plot containing a time series plot (i.e. \color{red}{\verb|type = "l"|}) of the 5-minute interval (x-axis) and the average number of steps taken, averaged across all weekday days or weekend days (y-axis). See the README file in the GitHub repository to see an example of what this plot should look like using simulated data.
+
+```{r ActivityPanelPlot, fig.height=10, fig.width=10}
+weekdayActivity <- filter(imputedActivity, factor == "weekday")
+weekendActivity <- filter(imputedActivity, factor == "weekend")
+
+wkdy.imputedIntervals.df <- spread(weekdayActivity, interval, steps)
+wkdy.imputedIntervals.df <- wkdy.imputedIntervals.df[-1:-3]
+wkdy.imputedMeans.df <- colMeans(wkdy.imputedIntervals.df, na.rm = TRUE)
+
+wknd.imputedIntervals.df <- spread(weekendActivity, interval, steps)
+wknd.imputedIntervals.df <- wknd.imputedIntervals.df[-1:-3]
+wknd.imputedMeans.df <- colMeans(wknd.imputedIntervals.df, na.rm = TRUE)
+
+par(mfrow=c(2,1))
+plot(wkdy.imputedMeans.df, type="l", xlab="Interval", ylab="Mean Steps", main="Weekday Activity Plot")
+plot(wknd.imputedMeans.df, type="l", xlab="Interval", ylab="Mean Steps", main="Weekend Activity Plot")
+
+
+```
